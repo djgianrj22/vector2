@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vetorizador – converta imagens em SVG, PDF e EPS (Corel)</title>
+<style>
+:root{--bg:#f6f7fb;--card:#fff;--tx:#14161f;--mut:#667;--bd:#dfe2ec;--ac:#5b5bf0;--ac2:#fff;--ck1:#fff;--ck2:#e9ebf2}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1117;--card:#181b25;--tx:#eef0f7;--mut:#99a;--bd:#2a2e3d;--ac:#7c7cff;--ac2:#0f1117;--ck1:#1d2130;--ck2:#252a3b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1100px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:1.8rem;margin:0 0 4px}p.sub{color:var(--mut);margin:0 0 20px}
+.drop{border:2px dashed var(--bd);background:var(--card);border-radius:16px;padding:36px 16px;text-align:center;cursor:pointer}
+.drop.over,.drop:hover{border-color:var(--ac)}.drop b{color:var(--ac)}
+.grid{display:grid;grid-template-columns:270px 1fr;gap:16px;margin-top:16px}
+@media(max-width:800px){.grid{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:16px}
+label{display:block;font-size:.85rem;color:var(--mut);margin:12px 0 4px}label span{float:right;color:var(--tx)}
+select,input[type=range]{width:100%}
+select{padding:8px;border-radius:8px;border:1px solid var(--bd);background:var(--bg);color:var(--tx)}
+.views{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:560px){.views{grid-template-columns:1fr}}
+.view h3{margin:0 0 8px;font-size:.85rem;color:var(--mut);font-weight:600}
+.box{aspect-ratio:1/1;border-radius:10px;border:1px solid var(--bd);overflow:hidden;display:flex;align-items:center;justify-content:center;position:relative;background:conic-gradient(var(--ck2) 25%,var(--ck1) 0 50%,var(--ck2) 0 75%,var(--ck1) 0) 0 0/20px 20px}
+.box img,.box svg{max-width:100%;max-height:100%;width:auto;height:auto;display:block}
+.load{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);color:#fff;font-weight:600}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+button{border:0;border-radius:10px;padding:10px 14px;font:inherit;font-weight:600;cursor:pointer;background:var(--ac);color:var(--ac2)}
+button.sec{background:transparent;color:var(--tx);border:1px solid var(--bd)}
+button:disabled{opacity:.4;cursor:not-allowed}
+.meta{color:var(--mut);font-size:.85rem;margin-top:10px}
+.err{color:#d33;margin-top:10px;display:none}[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Vetorizador</h1>
+  <p class="sub">Converta PNG, JPG ou WebP em vetor e baixe em SVG, PDF ou EPS (CorelDRAW). Tudo roda no navegador: a imagem não sai do seu computador.</p>
+  <div class="drop" id="drop"><div><b>Clique</b> ou arraste uma imagem aqui</div><div class="meta">PNG, JPG, WebP, GIF</div><input type="file" id="file" accept="image/*" hidden></div>
+  <div class="err" id="err"></div>
+  <div class="grid" id="app" hidden>
+    <div class="card">
+      <label>Modo</label>
+      <select id="mode"><option value="color">Cores (fotografia)</option><option value="few">Poucas cores (logo/ilustração)</option><option value="bw">Preto e branco</option></select>
+      <label>Número de cores <span id="vc">16</span></label><input type="range" id="colors" min="2" max="64" value="16">
+      <label>Detalhe <span id="vd">5</span></label><input type="range" id="detail" min="1" max="10" value="5">
+      <label>Remover ruído <span id="vn">8</span></label><input type="range" id="noise" min="0" max="60" value="8">
+      <label>Suavizar entrada <span id="vb">0</span></label><input type="range" id="blur" min="0" max="5" value="0">
+      <div class="btns">
+        <button class="ex" data-f="svg" disabled>SVG</button>
+        <button class="ex" data-f="pdf" disabled>PDF</button>
+        <button class="ex" data-f="eps" disabled>Corel (EPS)</button>
+        <button class="sec ex" id="cp" disabled>Copiar SVG</button>
+        <button class="sec" id="nw">Nova imagem</button>
+      </div>
+      <div class="meta" id="info"></div>
+      <div class="meta">O CorelDRAW abre SVG, EPS e PDF direto (Arquivo › Abrir ou Importar). O formato .cdr é proprietário e não pode ser gerado fora do Corel: abra o EPS e use “Salvar como” .cdr.</div>
+    </div>
+    <div class="card"><div class="views">
+      <div class="view"><h3>Original</h3><div class="box"><img id="orig" alt="Original"></div></div>
+      <div class="view"><h3>Vetor</h3><div class="box"><div id="out"></div><div class="load" id="load">Vetorizando…</div></div></div>
+    </div></div>
+  </div>
+</div>
+<script>
+(function(){
+  var $=function(i){return document.getElementById(i)};
+  var img=null,svg='',model=null,timer=null,name='imagem',MAX=1200,drop=$('drop'),file=$('file');
+  function err(m){var e=$('err');e.textContent=m||'';e.style.display=m?'block':'none'}
+  drop.onclick=function(){file.click()};
+  drop.ondragover=function(e){e.preventDefault();drop.classList.add('over')};
+  drop.ondragleave=function(){drop.classList.remove('over')};
+  drop.ondrop=function(e){e.preventDefault();drop.classList.remove('over');if(e.dataTransfer.files[0])load(e.dataTransfer.files[0])};
+  file.onchange=function(){if(file.files[0])load(file.files[0])};
+  $('nw').onclick=function(){$('app').hidden=true;drop.hidden=false;file.value='';err('')};
+  function load(f){
+    err('');if(!/^image\//.test(f.type)){err('Envie um arquivo de imagem.');return}
+    name=f.name.replace(/\.[^.]+$/,'')||'imagem';
+    var u=URL.createObjectURL(f),im=new Image();
+    im.onload=function(){img=im;$('orig').src=u;drop.hidden=true;$('app').hidden=false;run()};
+    im.onerror=function(){err('Não foi possível ler essa imagem.')};im.src=u;
+  }
+  function opts(){
+    var m=$('mode').value,n=+$('colors').value,d=+$('detail').value;
+    return {mode:m,k:m==='few'?Math.min(n,8):n,eps:1.8-d*0.15,minArea:+$('noise').value,smooth:true};
+  }
+  function run(){
+    clearTimeout(timer);
+    var L={colors:'vc',detail:'vd',noise:'vn',blur:'vb'};for(var k in L)$(L[k]).textContent=$(k).value;
+    $('colors').disabled=$('mode').value==='bw';timer=setTimeout(trace,250);
+  }
+  function ex(on){var b=document.querySelectorAll('.ex');for(var i=0;i<b.length;i++)b[i].disabled=!on}
+  function trace(){
+    if(!img)return;
+    $('load').style.display='flex';ex(false);
+    setTimeout(function(){
+      try{
+        var s=Math.min(1,MAX/Math.max(img.naturalWidth,img.naturalHeight)),w=Math.max(1,Math.round(img.naturalWidth*s)),h=Math.max(1,Math.round(img.naturalHeight*s));
+        var c=document.createElement('canvas');c.width=w;c.height=h;var x=c.getContext('2d');
+        if($('mode').value==='bw'){x.fillStyle='#fff';x.fillRect(0,0,w,h)}
+        if(+$('blur').value>0)x.filter='blur('+$('blur').value+'px)';x.drawImage(img,0,0,w,h);var t0=performance.now();
+        model=vectorize(x.getImageData(0,0,w,h),w,h,opts());svg=toSVG(model);
+        $('out').innerHTML=svg;
+        $('info').textContent=w+'×'+h+' px · '+(svg.match(/<path/g)||[]).length+' caminhos · '+(svg.length/1024).toFixed(0)+' KB · '+Math.round(performance.now()-t0)+' ms';
+        ex(true);err('');
+      }catch(e){err('Erro ao vetorizar: '+e.message)}
+      $('load').style.display='none';
+    },30);
+  }
+  ['mode','colors','detail','noise','blur'].forEach(function(k){$(k).addEventListener('input',run)});
+
+/* ---- vetorizador próprio (sem bibliotecas) ---- */
+function nearest(pal,r,g,b){var bi=0,bd=1e9;for(var i=0;i<pal.length;i++){var c=pal[i],d=(c[0]-r)*(c[0]-r)+(c[1]-g)*(c[1]-g)+(c[2]-b)*(c[2]-b);if(d<bd){bd=d;bi=i}}return bi}
+function quant(S,k){
+  var boxes=[S],it;
+  while(boxes.length<k){
+    var bi=-1,bs=0,bc=0;
+    boxes.forEach(function(b,i){if(b.length<2)return;
+      for(var c=0;c<3;c++){var mn=255,mx=0;for(var j=0;j<b.length;j++){var v=b[j][c];if(v<mn)mn=v;if(v>mx)mx=v}
+        var sc=(mx-mn)*Math.sqrt(b.length);if(sc>bs){bs=sc;bi=i;bc=c}}});
+    if(bi<0||bs===0)break;
+    var b=boxes[bi].slice().sort(function(p,q){return p[bc]-q[bc]}),m=b.length>>1;
+    boxes.splice(bi,1,b.slice(0,m),b.slice(m));
+  }
+  var pal=boxes.map(function(b){var s=[0,0,0];b.forEach(function(p){s[0]+=p[0];s[1]+=p[1];s[2]+=p[2]});return [Math.round(s[0]/b.length),Math.round(s[1]/b.length),Math.round(s[2]/b.length)]});
+  for(it=0;it<3;it++){
+    var sm=pal.map(function(){return [0,0,0,0]});
+    S.forEach(function(p){var v=sm[nearest(pal,p[0],p[1],p[2])];v[0]+=p[0];v[1]+=p[1];v[2]+=p[2];v[3]++});
+    pal=pal.map(function(c,i){var v=sm[i];return v[3]?[Math.round(v[0]/v[3]),Math.round(v[1]/v[3]),Math.round(v[2]/v[3])]:c});
+  }
+  return pal;
+}
+function dp(P,eps){
+  var keep=new Uint8Array(P.length);keep[0]=keep[P.length-1]=1;var st=[[0,P.length-1]];
+  while(st.length){
+    var s=st.pop(),a=P[s[0]],b=P[s[1]],dx=b[0]-a[0],dy=b[1]-a[1],L=Math.sqrt(dx*dx+dy*dy)||1,mx=-1,mi=-1;
+    for(var i=s[0]+1;i<s[1];i++){var d=Math.abs((P[i][0]-a[0])*dy-(P[i][1]-a[1])*dx)/L;if(d>mx){mx=d;mi=i}}
+    if(mx>eps){keep[mi]=1;st.push([s[0],mi],[mi,s[1]])}
+  }
+  return P.filter(function(_,i){return keep[i]});
+}
+function simp(P,eps){
+  if(P.length<4)return P;
+  var f=0,md=-1,i;
+  for(i=1;i<P.length;i++){var d=Math.pow(P[i][0]-P[0][0],2)+Math.pow(P[i][1]-P[0][1],2);if(d>md){md=d;f=i}}
+  var A=dp(P.slice(0,f+1),eps),B=dp(P.slice(f).concat([P[0]]),eps);
+  return A.slice(0,-1).concat(B.slice(0,-1));
+}
+function loopPath(P,o){
+  var n=P.length,i,a,b,c,A=0;
+  for(i=0;i<n;i++){a=P[i];b=P[(i+1)%n];A+=a[0]*b[1]-b[0]*a[1]}
+  if(Math.abs(A)/2<o.minArea)return '';
+  var Q=P.filter(function(p,i){var a=P[(i+n-1)%n],b=P[(i+1)%n];return (p[0]-a[0])*(b[1]-p[1])-(p[1]-a[1])*(b[0]-p[0])!==0});
+  Q=simp(Q,o.eps);n=Q.length;if(n<3)return '';
+  var E=[],X=[],K=[],f=function(v){return +v.toFixed(2)},mid=function(p,q){return [(p[0]+q[0])/2,(p[1]+q[1])/2]};
+  for(i=0;i<n;i++){
+    a=Q[(i+n-1)%n];b=Q[i];c=Q[(i+1)%n];
+    var ux=b[0]-a[0],uy=b[1]-a[1],vx=c[0]-b[0],vy=c[1]-b[1],lu=Math.sqrt(ux*ux+uy*uy),lv=Math.sqrt(vx*vx+vy*vy);
+    var cr=!o.smooth||(lu>=3&&lv>=3&&(ux*vx+uy*vy)/(lu*lv)<0.5);
+    K.push(cr);E.push(cr?b:mid(a,b));X.push(cr?b:mid(b,c));
+  }
+  var cur=X[n-1],d='M '+f(cur[0])+' '+f(cur[1])+' ';
+  for(i=0;i<n;i++){
+    if(E[i][0]!==cur[0]||E[i][1]!==cur[1])d+='L '+f(E[i][0])+' '+f(E[i][1])+' ';
+    if(!K[i])d+='Q '+f(Q[i][0])+' '+f(Q[i][1])+' '+f(X[i][0])+' '+f(X[i][1])+' ';
+    cur=X[i];
+  }
+  return d+'Z ';
+}
+function vectorize(img,w,h,o){
+  var D=img.data,N=w*h,L=new Int16Array(N).fill(-1),pal,i;
+  if(o.mode==='bw'){
+    pal=[[0,0,0],[255,255,255]];
+    for(i=0;i<N;i++)if(D[i*4+3]>=128)L[i]=(D[i*4]*.299+D[i*4+1]*.587+D[i*4+2]*.114)<128?0:1;
+  }else{
+    var S=[],step=Math.max(1,Math.floor(N/20000));
+    for(i=0;i<N;i+=step)if(D[i*4+3]>=128)S.push([D[i*4],D[i*4+1],D[i*4+2]]);
+    if(!S.length)return {W:w,H:h,P:[]};
+    pal=quant(S,o.k);
+    var cache=new Int16Array(262144).fill(-1);
+    for(i=0;i<N;i++){
+      if(D[i*4+3]<128)continue;
+      var r=D[i*4],g=D[i*4+1],b=D[i*4+2],key=((r>>2)<<12)|((g>>2)<<6)|(b>>2),v=cache[key];
+      if(v<0){v=nearest(pal,r,g,b);cache[key]=v}
+      L[i]=v;
+    }
+  }
+  var W1=w+1,o1=new Int32Array(W1*(h+1)).fill(-1),o2=new Int32Array(W1*(h+1)).fill(-1),P=[];
+  var count=pal.map(function(){return 0});
+  for(i=0;i<N;i++)if(L[i]>=0)count[L[i]]++;
+  var order=pal.map(function(_,i){return i}).sort(function(a,b){return count[b]-count[a]});
+  order.forEach(function(k){
+    if(!count[k]||(o.mode==='bw'&&k===1))return;
+    var st=[],x,y,p,v;
+    var add=function(s,e){if(o1[s]<0)o1[s]=e;else o2[s]=e;st.push(s)};
+    for(y=0;y<h;y++)for(x=0;x<w;x++){
+      p=y*w+x;if(L[p]!==k)continue;v=y*W1+x;
+      if(y===0||L[p-w]!==k)add(v,v+1);
+      if(x===w-1||L[p+1]!==k)add(v+1,v+1+W1);
+      if(y===h-1||L[p+w]!==k)add(v+1+W1,v+W1);
+      if(x===0||L[p-1]!==k)add(v+W1,v);
+    }
+    var d='';
+    st.forEach(function(s){
+      while(o1[s]>=0){
+        var pts=[],cur=s,nx;
+        do{pts.push([cur%W1,(cur/W1)|0]);nx=o1[cur];o1[cur]=o2[cur];o2[cur]=-1;cur=nx}while(cur!==s&&cur>=0);
+        d+=loopPath(pts,o);
+      }
+    });
+    if(d)P.push({c:pal[k],d:d});
+  });
+  return {W:w,H:h,P:P};
+}
+function toSVG(m){
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+m.W+' '+m.H+'" width="'+m.W+'" height="'+m.H+'">'+
+    m.P.map(function(q){var c='rgb('+q.c.join(',')+')';return '<path fill="'+c+'" stroke="'+c+'" stroke-width="0.5" stroke-linejoin="round" d="'+q.d+'"/>'}).join('')+'</svg>';
+}
+
+  /* ---- exportação ---- */
+  var n=function(v){return +(+v).toFixed(2)};
+  function parse(){return model}
+  function walk(d,mv,ln,cu,cl){
+    var t=d.trim().split(/\s+/),i=0,x=0,y=0,c;
+    while(i<t.length){c=t[i++];
+      if(c==='M'){x=+t[i++];y=+t[i++];mv(x,y)}
+      else if(c==='L'){var a=+t[i++],b=+t[i++];ln(a,b);x=a;y=b}
+      else if(c==='Q'){var qx=+t[i++],qy=+t[i++],ex=+t[i++],ey=+t[i++];
+        cu(x+2/3*(qx-x),y+2/3*(qy-y),ex+2/3*(qx-ex),ey+2/3*(qy-ey),ex,ey);x=ex;y=ey}
+      else if(c==='Z')cl();
+    }
+  }
+  function build(p,ops){
+    var s='';
+    p.P.forEach(function(q){
+      s+=ops.col(q.c);
+      walk(q.d,function(x,y){s+=n(x)+' '+n(y)+' '+ops.m+'\n'},function(x,y){s+=n(x)+' '+n(y)+' '+ops.l+'\n'},
+        function(a,b,c,d,e,f){s+=[a,b,c,d,e,f].map(n).join(' ')+' '+ops.c+'\n'},function(){s+=ops.z+'\n'});
+      s+=ops.f+'\n';
+    });
+    return s;
+  }
+  function toPDF(p){
+    var s='1 0 0 -1 0 '+p.H+' cm\n0.5 w 1 j\n'+build(p,{m:'m',l:'l',c:'c',z:'h',f:'B',col:function(c){var v=c.map(function(u){return (u/255).toFixed(3)}).join(' ');return v+' rg '+v+' RG\n'}});
+    var o=['<</Type/Catalog/Pages 2 0 R>>','<</Type/Pages/Kids[3 0 R]/Count 1>>','<</Type/Page/Parent 2 0 R/MediaBox[0 0 '+p.W+' '+p.H+']/Contents 4 0 R/Resources<<>>>>','<</Length '+s.length+'>>\nstream\n'+s+'endstream'];
+    var out='%PDF-1.4\n',off=[];
+    o.forEach(function(b,i){off.push(out.length);out+=(i+1)+' 0 obj\n'+b+'\nendobj\n'});
+    var xr=out.length;
+    out+='xref\n0 5\n0000000000 65535 f \n'+off.map(function(v){return ('0000000000'+v).slice(-10)+' 00000 n \n'}).join('')+'trailer\n<</Size 5/Root 1 0 R>>\nstartxref\n'+xr+'\n%%EOF';
+    return new Blob([out],{type:'application/pdf'});
+  }
+  function toEPS(p){
+    var s='%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 '+Math.ceil(p.W)+' '+Math.ceil(p.H)+'\n%%Creator: Vetorizador\n%%EndComments\n0 '+p.H+' translate 1 -1 scale\n'
+      +build(p,{m:'moveto',l:'lineto',c:'curveto',z:'closepath',f:'gsave fill grestore 0.5 setlinewidth 1 setlinejoin stroke',col:function(c){return 'newpath '+c.map(function(v){return (v/255).toFixed(3)}).join(' ')+' setrgbcolor\n'}})
+      +'showpage\n%%EOF\n';
+    return new Blob([s],{type:'application/postscript'});
+  }
+  function save(b,ext){var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name+'.'+ext;document.body.appendChild(a);a.click();a.remove()}
+  document.querySelectorAll('button[data-f]').forEach(function(b){b.onclick=function(){
+    var f=b.dataset.f;
+    if(f==='svg')save(new Blob([svg],{type:'image/svg+xml'}),'svg');
+    else{var p=parse();save(f==='pdf'?toPDF(p):toEPS(p),f)}
+  }});
+  $('cp').onclick=function(){
+    var b=$('cp');function ok(){b.textContent='Copiado!';setTimeout(function(){b.textContent='Copiar SVG'},1500)}
+    function fb(){var t=document.createElement('textarea');t.value=svg;document.body.appendChild(t);t.select();try{document.execCommand('copy');ok()}catch(e){}t.remove()}
+    try{navigator.clipboard.writeText(svg).then(ok,fb)}catch(e){fb()}
+  };
+})();
+</script>
+</body>
+</html>
